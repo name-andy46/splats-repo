@@ -1446,22 +1446,13 @@ async function main() {
     let lastVertexCount = -1;
     let stopLoading = false;
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done || stopLoading) break;
-
-        splatData.set(value, bytesRead);
-        bytesRead += value.length;
-
-        if (vertexCount > lastVertexCount) {
-            if (!isPly(splatData)) {
-                worker.postMessage({
-                    buffer: splatData.buffer,
-                    vertexCount: Math.floor(bytesRead / rowLength),
-                });
-            }
-            lastVertexCount = vertexCount;
-        }
+    if (isPly(splatData)) {
+        worker.postMessage({ ply: splatData.buffer, save: false });
+    } else {
+        worker.postMessage({
+            buffer: splatData.buffer,
+            vertexCount: Math.floor(splatData.length / rowLength),
+        });
     }
     if (!stopLoading) {
         if (isPly(splatData)) {
