@@ -271,13 +271,6 @@ other
 		</div>
 		<div id="caminfo">
 			<span id="camid"></span>
-		<script>
-			// Forces the viewer to look for your specific file by default
-			const urlParams = new URLSearchParams(window.location.search);
-			if (!urlParams.has('url')) {
-			    window.history.replaceState(null, '', '?url=point_cloud.ply');
-			}
-		</script>
 		</div>
 		<script src="main.js"></script>
 	</body>
