@@ -908,6 +908,7 @@ async function main() {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
         } else if (e.data.depthIndex) {
+            console.log("Worker returned vertex count:", e.data.vertexCount);
             const { depthIndex, viewProj } = e.data;
             gl.bindBuffer(gl.ARRAY_BUFFER, indexBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, depthIndex, gl.DYNAMIC_DRAW);
@@ -1408,15 +1409,15 @@ async function main() {
                 splatData = new Uint8Array(fr.result);
                 console.log("Loaded", Math.floor(splatData.length / rowLength));
 
-                if (isPly(splatData)) {
-                    // ply file magic header means it should be handled differently
-                    worker.postMessage({ ply: splatData.buffer, save: true });
-                } else {
-                    worker.postMessage({
-                        buffer: splatData.buffer,
-                        vertexCount: Math.floor(splatData.length / rowLength),
-                    });
-                }
+                const initialVertexCount = Math.floor(splatData.length / rowLength);
+
+                console.log("Initial vertex count:", initialVertexCount);
+                console.log("Splat byte length:", splatData.length);
+
+                worker.postMessage({
+                    buffer: splatData.buffer,
+                    vertexCount: initialVertexCount,
+                });
             };
             fr.readAsArrayBuffer(file);
         }
@@ -1446,14 +1447,15 @@ async function main() {
     let lastVertexCount = -1;
     let stopLoading = false;
 
-    if (isPly(splatData)) {
-        worker.postMessage({ ply: splatData.buffer, save: false });
-    } else {
-        worker.postMessage({
-            buffer: splatData.buffer,
-            vertexCount: Math.floor(splatData.length / rowLength),
-        });
-    }
+    const initialVertexCount = Math.floor(splatData.length / rowLength);
+
+    console.log("Initial vertex count:", initialVertexCount);
+    console.log("Splat byte length:", splatData.length);
+
+    worker.postMessage({
+        buffer: splatData.buffer,
+        vertexCount: initialVertexCount,
+    });
     // if (!stopLoading) {
     //     if (isPly(splatData)) {
     //         // ply file magic header means it should be handled differently
