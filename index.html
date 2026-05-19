@@ -162,6 +162,80 @@
 				z-index: 999;
 				right: 10px;
 			}
+
+			#asset-banner {
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				z-index: 100;
+				background: rgba(15, 18, 25, 0.88);
+				backdrop-filter: blur(10px);
+				border-bottom: 1px solid rgba(255,255,255,0.08);
+				padding: 10px 20px;
+				display: flex;
+				align-items: center;
+				gap: 20px;
+				font-size: 13px;
+				color: #e2e8f0;
+				text-shadow: none;
+			}
+			#asset-banner .asset-name {
+				font-weight: 700;
+				font-size: 15px;
+				color: #fff;
+				margin-right: 8px;
+			}
+			#asset-banner .health-score {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			#asset-banner .health-bar {
+				width: 100px;
+				height: 8px;
+				background: rgba(255,255,255,0.1);
+				border-radius: 4px;
+				overflow: hidden;
+			}
+			#asset-banner .health-bar-fill {
+				height: 100%;
+				border-radius: 4px;
+				transition: width 0.4s;
+			}
+			#asset-banner .health-pct {
+				font-weight: 700;
+				min-width: 36px;
+			}
+			#asset-banner .divider {
+				width: 1px;
+				height: 20px;
+				background: rgba(255,255,255,0.15);
+			}
+			#asset-banner .stat-badges {
+				display: flex;
+				gap: 10px;
+			}
+			#asset-banner .badge {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				font-size: 12px;
+				font-weight: 600;
+				padding: 3px 10px;
+				border-radius: 10px;
+			}
+			#asset-banner .badge .dot {
+				width: 7px;
+				height: 7px;
+				border-radius: 50%;
+			}
+			#asset-banner .badge.alarm  { background: rgba(239,68,68,0.15); color: #f87171; }
+			#asset-banner .badge.alarm .dot  { background: #ef4444; }
+			#asset-banner .badge.warning { background: rgba(245,158,11,0.15); color: #fbbf24; }
+			#asset-banner .badge.warning .dot { background: #f59e0b; }
+			#asset-banner .badge.healthy { background: rgba(34,197,94,0.15); color: #4ade80; }
+			#asset-banner .badge.healthy .dot { background: #22c55e; }
 			#canvas {
 				display: block;
 				position: absolute;
@@ -170,6 +244,87 @@
 				width: 100%;
 				height: 100%;
 				touch-action: none;
+			}
+
+			#heatmap-canvas {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				z-index: 5;
+				pointer-events: none;
+				opacity: 0;
+				transition: opacity 0.4s ease;
+			}
+			#heatmap-canvas.visible {
+				opacity: 1;
+			}
+
+			#heatmap-toggle {
+				position: absolute;
+				bottom: 14px;
+				left: 14px;
+				z-index: 100;
+				background: rgba(15, 18, 25, 0.85);
+				backdrop-filter: blur(8px);
+				border: 1px solid rgba(255,255,255,0.15);
+				color: #e2e8f0;
+				font-size: 12px;
+				font-weight: 600;
+				padding: 8px 14px;
+				border-radius: 8px;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				transition: background 0.2s;
+				text-shadow: none;
+			}
+			#heatmap-toggle:hover {
+				background: rgba(30, 36, 50, 0.95);
+			}
+			#heatmap-toggle .toggle-dot {
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: #64748b;
+				transition: background 0.2s;
+			}
+			#heatmap-toggle.active .toggle-dot {
+				background: #4ade80;
+			}
+
+			#heatmap-legend {
+				position: absolute;
+				bottom: 52px;
+				left: 14px;
+				z-index: 100;
+				background: rgba(15, 18, 25, 0.85);
+				backdrop-filter: blur(8px);
+				border: 1px solid rgba(255,255,255,0.12);
+				border-radius: 8px;
+				padding: 10px 14px;
+				color: #e2e8f0;
+				font-size: 11px;
+				display: none;
+				text-shadow: none;
+			}
+			#heatmap-legend.visible {
+				display: block;
+			}
+			.legend-bar {
+				width: 140px;
+				height: 10px;
+				border-radius: 5px;
+				background: linear-gradient(to right, #22c55e, #eab308, #ef4444);
+				margin: 6px 0 4px;
+			}
+			.legend-labels {
+				display: flex;
+				justify-content: space-between;
+				font-size: 10px;
+				color: #94a3b8;
 			}
 
 			#instructions {
@@ -354,15 +509,6 @@
 		</script>
 		<div id="info">
 			<h3 class="nohf">WebGL 3D Gaussian Splat Viewer</h3>
-			<p>
-			<small class="nohf">
-				By <a href="https://twitter.com/antimatter15">Kevin Kwok</a>.
-				Code on
-				<a href="https://github.com/antimatter15/splat">Github</a
-				>.
-			</small>
-		</p>
-
 			<details>
 			<summary>Use mouse or arrow keys to navigate.</summary>
 
@@ -426,8 +572,22 @@
 			</div>
 		</div>
 		<div id="sensor-overlay"></div>
+		<canvas id="heatmap-canvas"></canvas>
 		<canvas id="canvas"></canvas>
 
+		<div id="asset-banner"></div>
+		<div id="heatmap-legend">
+			<div style="font-weight:600; margin-bottom:2px;">Vibration Intensity</div>
+			<div class="legend-bar"></div>
+			<div class="legend-labels">
+				<span>Low</span>
+				<span>Medium</span>
+				<span>High</span>
+			</div>
+		</div>
+		<button id="heatmap-toggle">
+			<span class="toggle-dot"></span>Vibration Heatmap
+		</button>
 		<div id="quality">
 			<span id="fps"></span>
 		</div>

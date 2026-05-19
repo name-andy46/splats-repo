@@ -173,6 +173,7 @@ const sensors = [
             vibration: "0.8 mm/s",
             lastSeen: "2s ago",
             alarms: [],
+            tve: [0.6, 0.7, 0.65, 0.8, 0.7, 0.75, 0.7, 0.8, 0.72, 0.78, 0.74, 0.8],
         },
     },
     {
@@ -187,6 +188,7 @@ const sensors = [
             vibration: "4.2 mm/s",
             lastSeen: "2s ago",
             alarms: ["Vibration above threshold (4.0 mm/s)"],
+            tve: [1.8, 2.0, 2.1, 2.4, 2.6, 2.9, 3.1, 3.3, 3.5, 3.8, 4.0, 4.2],
         },
     },
     {
@@ -201,6 +203,7 @@ const sensors = [
             vibration: "0.3 mm/s",
             lastSeen: "1s ago",
             alarms: [],
+            tve: [0.3, 0.28, 0.32, 0.29, 0.31, 0.3, 0.28, 0.33, 0.3, 0.29, 0.31, 0.3],
         },
     },
     {
@@ -215,6 +218,7 @@ const sensors = [
             vibration: "0.2 mm/s",
             lastSeen: "1s ago",
             alarms: [],
+            tve: [0.18, 0.2, 0.19, 0.21, 0.2, 0.19, 0.22, 0.2, 0.18, 0.21, 0.2, 0.19],
         },
     },
     {
@@ -232,6 +236,7 @@ const sensors = [
                 "Battery temperature critical (>60°C)",
                 "Signal degraded — check antenna",
             ],
+            tve: [0.6, 0.7, 0.8, 0.75, 0.9, 0.85, 0.95, 1.0, 0.9, 1.0, 1.05, 1.1],
         },
     },
 ];
@@ -390,6 +395,24 @@ function project3DToScreen(worldPos, viewMat, projMat) {
     };
 }
 
+function buildSparklineSVG(values, status) {
+    const w = 120, h = 32, pad = 2;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const points = values.map((v, i) => {
+        const x = pad + (i / (values.length - 1)) * (w - pad * 2);
+        const y = pad + (1 - (v - min) / range) * (h - pad * 2);
+        return `${x},${y}`;
+    });
+    const strokeColor =
+        status === "alarm" ? "#f87171" : status === "warning" ? "#fbbf24" : "#4ade80";
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+        <polyline points="${points.join(" ")}" fill="none" stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${points[points.length - 1].split(",")[0]}" cy="${points[points.length - 1].split(",")[1]}" r="2.5" fill="${strokeColor}"/>
+    </svg>`;
+}
+
 function buildPopupHTML(sensor) {
     const d = sensor.data;
     const batteryColor =
@@ -420,6 +443,13 @@ function buildPopupHTML(sensor) {
         <div class="sensor-popup-row">
             <span class="label">Vibration</span>
             <span class="value">${d.vibration}</span>
+        </div>
+        <div style="margin:8px 0 4px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <span class="label" style="color:#94a3b8;font-size:12px">TVE (24h)</span>
+                <span class="value" style="font-size:12px">${d.tve[d.tve.length - 1].toFixed(1)} mm/s</span>
+            </div>
+            ${buildSparklineSVG(d.tve, sensor.status)}
         </div>
         <div class="sensor-popup-row">
             <span class="label">Last seen</span>
@@ -504,6 +534,116 @@ function updateSensorPositions(viewMat, projMat) {
         const s = Math.max(0.6, Math.min(1.4, 4 / screen.depth));
         marker.style.setProperty("--scale", s);
         marker.querySelector(".sensor-dot").style.transform = `scale(${s})`;
+    }
+}
+
+// Asset health banner
+function initAssetBanner() {
+    const counts = { healthy: 0, warning: 0, alarm: 0 };
+    sensors.forEach((s) => counts[s.status]++);
+    const total = sensors.length;
+    // Health score: healthy=100%, warning=50%, alarm=0%
+    const score = Math.round(
+        ((counts.healthy * 1 + counts.warning * 0.5 + counts.alarm * 0) / total) * 100
+    );
+    const barColor =
+        score >= 75 ? "#22c55e" : score >= 45 ? "#f59e0b" : "#ef4444";
+
+    const banner = document.getElementById("asset-banner");
+    banner.innerHTML = `
+        <span class="asset-name">EV-SCO-0042</span>
+        <div class="divider"></div>
+        <div class="health-score">
+            <span style="color:#94a3b8">Asset Health</span>
+            <div class="health-bar">
+                <div class="health-bar-fill" style="width:${score}%;background:${barColor}"></div>
+            </div>
+            <span class="health-pct" style="color:${barColor}">${score}%</span>
+        </div>
+        <div class="divider"></div>
+        <div class="stat-badges">
+            ${counts.alarm > 0 ? `<div class="badge alarm"><span class="dot"></span>${counts.alarm} Alarm</div>` : ""}
+            ${counts.warning > 0 ? `<div class="badge warning"><span class="dot"></span>${counts.warning} Warning</div>` : ""}
+            <div class="badge healthy"><span class="dot"></span>${counts.healthy} Healthy</div>
+        </div>`;
+}
+
+// Heatmap system
+let heatmapEnabled = false;
+let heatmapCtx = null;
+
+function initHeatmap() {
+    const heatCanvas = document.getElementById("heatmap-canvas");
+    heatmapCtx = heatCanvas.getContext("2d");
+
+    const toggle = document.getElementById("heatmap-toggle");
+    const legend = document.getElementById("heatmap-legend");
+    toggle.addEventListener("click", () => {
+        heatmapEnabled = !heatmapEnabled;
+        toggle.classList.toggle("active", heatmapEnabled);
+        heatCanvas.classList.toggle("visible", heatmapEnabled);
+        legend.classList.toggle("visible", heatmapEnabled);
+        if (!heatmapEnabled) {
+            heatmapCtx.clearRect(0, 0, heatCanvas.width, heatCanvas.height);
+        }
+    });
+}
+
+// Map vibration value to a severity 0-1
+function vibrationSeverity(sensor) {
+    const raw = parseFloat(sensor.data.vibration); // e.g. "4.2 mm/s" → 4.2
+    // Scale: 0 mm/s = 0.0, 5+ mm/s = 1.0
+    return Math.min(1, raw / 5);
+}
+
+// Severity to color: green → yellow → red
+function severityColor(t, alpha) {
+    let r, g, b;
+    if (t < 0.5) {
+        const s = t / 0.5;
+        r = Math.round(34 + (234 - 34) * s);
+        g = Math.round(197 + (179 - 197) * s);
+        b = Math.round(94 + (8 - 94) * s);
+    } else {
+        const s = (t - 0.5) / 0.5;
+        r = Math.round(234 + (239 - 234) * s);
+        g = Math.round(179 - 179 * s);
+        b = Math.round(8 + (68 - 8) * s);
+    }
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function renderHeatmap(viewMat, projMat) {
+    if (!heatmapEnabled || !heatmapCtx) return;
+    const c = heatmapCtx.canvas;
+    c.width = innerWidth;
+    c.height = innerHeight;
+    heatmapCtx.clearRect(0, 0, c.width, c.height);
+
+    // Collect screen positions and severities
+    const points = [];
+    for (const sensor of sensors) {
+        const screen = project3DToScreen(sensor.position, viewMat, projMat);
+        if (!screen) continue;
+        if (screen.x < -200 || screen.x > c.width + 200 ||
+            screen.y < -200 || screen.y > c.height + 200) continue;
+        const sev = vibrationSeverity(sensor);
+        // Radius scales inversely with depth (closer = bigger blob)
+        const radius = Math.max(40, Math.min(250, 500 / screen.depth));
+        points.push({ x: screen.x, y: screen.y, severity: sev, radius });
+    }
+
+    if (points.length === 0) return;
+
+    // Draw each sensor's heat blob additively
+    for (const p of points) {
+        const grad = heatmapCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
+        const baseAlpha = 0.25 + p.severity * 0.3; // more severe = more opaque
+        grad.addColorStop(0, severityColor(p.severity, baseAlpha));
+        grad.addColorStop(0.4, severityColor(p.severity, baseAlpha * 0.6));
+        grad.addColorStop(1, severityColor(p.severity, 0));
+        heatmapCtx.fillStyle = grad;
+        heatmapCtx.fillRect(p.x - p.radius, p.y - p.radius, p.radius * 2, p.radius * 2);
     }
 }
 
@@ -1077,6 +1217,8 @@ async function main() {
     resize();
 
     createSensorOverlays();
+    initHeatmap();
+    initAssetBanner();
 
     worker.onmessage = (e) => {
         if (e.data.buffer) {
@@ -1599,6 +1741,7 @@ async function main() {
         worker.postMessage({ view: viewProj });
 
         updateSensorPositions(actualViewMatrix, projectionMatrix);
+        renderHeatmap(actualViewMatrix, projectionMatrix);
 
         const currentFps = 1000 / (now - lastFrame) || 0;
         avgFps = avgFps * 0.9 + currentFps * 0.1;
