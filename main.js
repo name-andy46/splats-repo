@@ -157,6 +157,85 @@ let cameras = [
 
 let camera = cameras[0];
 
+// Sensor definitions — adjust 'position' arrays [x, y, z] to match your scooter geometry.
+// Tip: orbit to a sensor location, press V to log the view matrix, then use the camera
+// inverse translation to estimate world coordinates.
+const sensors = [
+    {
+        id: "front-wheel",
+        label: "Front Wheel (NDE)",
+        position: [-0.64,-0.1,0.02],
+        status: "healthy",
+        data: {
+            battery: 94,
+            signal: "Strong",
+            temperature: "36°C",
+            vibration: "0.8 mm/s",
+            lastSeen: "2s ago",
+            alarms: [],
+        },
+    },
+    {
+        id: "rear-wheel",
+        label: "Rear Wheel (DE)",
+        position: [0.84,-0.1,0.1],
+        status: "warning",
+        data: {
+            battery: 71,
+            signal: "Good",
+            temperature: "48°C",
+            vibration: "4.2 mm/s",
+            lastSeen: "2s ago",
+            alarms: ["Vibration above threshold (4.0 mm/s)"],
+        },
+    },
+    {
+        id: "handlebar",
+        label: "Handlebar",
+        position: [-0.0, -1.1, -0.2],
+        status: "healthy",
+        data: {
+            battery: 88,
+            signal: "Strong",
+            temperature: "31°C",
+            vibration: "0.3 mm/s",
+            lastSeen: "1s ago",
+            alarms: [],
+        },
+    },
+    {
+        id: "dashboard",
+        label: "Dashboard Display",
+        position: [-0.3, -1.2, -0.13],
+        status: "healthy",
+        data: {
+            battery: 100,
+            signal: "Strong",
+            temperature: "33°C",
+            vibration: "0.2 mm/s",
+            lastSeen: "1s ago",
+            alarms: [],
+        },
+    },
+    {
+        id: "battery-compartment",
+        label: "Battery Bay",
+        position: [0.2, -0.5, 0.0],
+        status: "alarm",
+        data: {
+            battery: 45,
+            signal: "Weak",
+            temperature: "62°C",
+            vibration: "1.1 mm/s",
+            lastSeen: "8s ago",
+            alarms: [
+                "Battery temperature critical (>60°C)",
+                "Signal degraded — check antenna",
+            ],
+        },
+    },
+];
+
 function getProjectionMatrix(fx, fy, width, height) {
     const znear = 0.2;
     const zfar = 200;
@@ -293,6 +372,139 @@ function translate4(a, x, y, z) {
         a[2] * x + a[6] * y + a[10] * z + a[14],
         a[3] * x + a[7] * y + a[11] * z + a[15],
     ];
+}
+
+function project3DToScreen(worldPos, viewMat, projMat) {
+    const vp = multiply4(projMat, viewMat);
+    const x = worldPos[0], y = worldPos[1], z = worldPos[2];
+    const clipX = vp[0] * x + vp[4] * y + vp[8] * z + vp[12];
+    const clipY = vp[1] * x + vp[5] * y + vp[9] * z + vp[13];
+    const clipW = vp[3] * x + vp[7] * y + vp[11] * z + vp[15];
+    if (clipW <= 0.1) return null;
+    const ndcX = clipX / clipW;
+    const ndcY = clipY / clipW;
+    return {
+        x: ((ndcX + 1) / 2) * innerWidth,
+        y: ((1 - ndcY) / 2) * innerHeight,
+        depth: clipW,
+    };
+}
+
+function buildPopupHTML(sensor) {
+    const d = sensor.data;
+    const batteryColor =
+        d.battery > 60 ? "#22c55e" : d.battery > 25 ? "#f59e0b" : "#ef4444";
+    let html = `
+        <div class="sensor-popup-header">
+            <h4>${sensor.label}</h4>
+            <span class="sensor-popup-status ${sensor.status}">
+                ${sensor.status.charAt(0).toUpperCase() + sensor.status.slice(1)}
+            </span>
+        </div>
+        <div class="sensor-popup-row">
+            <span class="label">Battery</span>
+            <span class="value">
+                <span class="battery-bar">
+                    <span class="battery-bar-fill" style="width:${d.battery}%;background:${batteryColor}"></span>
+                </span>${d.battery}%
+            </span>
+        </div>
+        <div class="sensor-popup-row">
+            <span class="label">Signal</span>
+            <span class="value">${d.signal}</span>
+        </div>
+        <div class="sensor-popup-row">
+            <span class="label">Temperature</span>
+            <span class="value">${d.temperature}</span>
+        </div>
+        <div class="sensor-popup-row">
+            <span class="label">Vibration</span>
+            <span class="value">${d.vibration}</span>
+        </div>
+        <div class="sensor-popup-row">
+            <span class="label">Last seen</span>
+            <span class="value">${d.lastSeen}</span>
+        </div>`;
+    if (d.alarms.length > 0) {
+        html += `<div class="sensor-popup-alarms">
+            <div class="alarm-title">Active Alarms (${d.alarms.length})</div>
+            ${d.alarms.map((a) => `<div class="alarm-item">&#9888; ${a}</div>`).join("")}
+        </div>`;
+    }
+    return html;
+}
+
+let sensorElements = [];
+let activePopupId = null;
+
+function createSensorOverlays() {
+    const container = document.getElementById("sensor-overlay");
+    sensors.forEach((sensor) => {
+        const marker = document.createElement("button");
+        marker.className = "sensor-marker";
+        marker.innerHTML = `
+            <div class="sensor-dot ${sensor.status}"></div>
+            <span class="sensor-label">${sensor.label}</span>`;
+
+        const popup = document.createElement("div");
+        popup.className = "sensor-popup";
+        popup.innerHTML = buildPopupHTML(sensor);
+
+        marker.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (activePopupId === sensor.id) {
+                popup.classList.remove("visible");
+                activePopupId = null;
+            } else {
+                document.querySelectorAll(".sensor-popup.visible").forEach((p) =>
+                    p.classList.remove("visible"));
+                popup.classList.add("visible");
+                activePopupId = sensor.id;
+            }
+        });
+
+        container.appendChild(marker);
+        container.appendChild(popup);
+        sensorElements.push({ sensor, marker, popup });
+    });
+
+    // Close popups when clicking canvas
+    document.getElementById("canvas").addEventListener("mousedown", () => {
+        if (activePopupId) {
+            document.querySelectorAll(".sensor-popup.visible").forEach((p) =>
+                p.classList.remove("visible"));
+            activePopupId = null;
+        }
+    });
+}
+
+function updateSensorPositions(viewMat, projMat) {
+    for (const { sensor, marker, popup } of sensorElements) {
+        const screen = project3DToScreen(sensor.position, viewMat, projMat);
+        if (
+            !screen ||
+            screen.x < -50 || screen.x > innerWidth + 50 ||
+            screen.y < -50 || screen.y > innerHeight + 50
+        ) {
+            marker.classList.add("behind-camera");
+            popup.classList.remove("visible");
+            if (activePopupId === sensor.id) activePopupId = null;
+            continue;
+        }
+        marker.classList.remove("behind-camera");
+        marker.style.left = screen.x + "px";
+        marker.style.top = screen.y + "px";
+
+        // Position popup above the marker
+        popup.style.left = screen.x + "px";
+        popup.style.top = (screen.y - 36) + "px";
+        popup.style.transform = "translate(-50%, -100%)";
+
+        // Scale markers slightly by distance for depth cue
+        const s = Math.max(0.6, Math.min(1.4, 4 / screen.depth));
+        marker.style.setProperty("--scale", s);
+        marker.querySelector(".sensor-dot").style.transform = `scale(${s})`;
+    }
 }
 
 function createWorker(self) {
@@ -743,7 +955,7 @@ async function main() {
         viewMatrix = JSON.parse(decodeURIComponent(location.hash.slice(1)));
         carousel = false;
     } catch (err) {}
-    const url = "./scooter.splat";
+    const url = "./scooter-edited.splat";
     const req = await fetch(url, {
         mode: "cors", // no-cors, *cors, same-origin
         credentials: "omit", // include, *same-origin, omit
@@ -863,6 +1075,8 @@ async function main() {
 
     window.addEventListener("resize", resize);
     resize();
+
+    createSensorOverlays();
 
     worker.onmessage = (e) => {
         if (e.data.buffer) {
@@ -1001,10 +1215,43 @@ async function main() {
         { passive: false },
     );
 
+    // Position picker: hold G and click to log 3D coords for sensor placement.
+    let gKeyDown = false;
+    window.addEventListener("keydown", (e) => { if (e.code === "KeyG") gKeyDown = true; });
+    window.addEventListener("keyup", (e) => { if (e.code === "KeyG") gKeyDown = false; });
+
     let startX, startY, down;
     canvas.addEventListener("mousedown", (e) => {
         carousel = false;
         e.preventDefault();
+
+        if (gKeyDown) {
+            const ndcX = (e.clientX / innerWidth) * 2 - 1;
+            const ndcY = 1 - (e.clientY / innerHeight) * 2;
+            const invView = invert4(viewMatrix);
+            const camPos = [invView[12], invView[13], invView[14]];
+            const invProj = invert4(projectionMatrix);
+            const vx = invProj[0] * ndcX + invProj[4] * ndcY + invProj[8] * (-1) + invProj[12];
+            const vy = invProj[1] * ndcX + invProj[5] * ndcY + invProj[9] * (-1) + invProj[13];
+            const vz = invProj[2] * ndcX + invProj[6] * ndcY + invProj[10] * (-1) + invProj[14];
+            const vw = invProj[3] * ndcX + invProj[7] * ndcY + invProj[11] * (-1) + invProj[15];
+            const viewDir = [vx / vw, vy / vw, vz / vw];
+            const worldDirX = invView[0] * viewDir[0] + invView[4] * viewDir[1] + invView[8] * viewDir[2];
+            const worldDirY = invView[1] * viewDir[0] + invView[5] * viewDir[1] + invView[9] * viewDir[2];
+            const worldDirZ = invView[2] * viewDir[0] + invView[6] * viewDir[1] + invView[10] * viewDir[2];
+            const len = Math.hypot(worldDirX, worldDirY, worldDirZ);
+            const dir = [worldDirX / len, worldDirY / len, worldDirZ / len];
+            const dist = Math.hypot(camPos[0], camPos[1], camPos[2]);
+            const pos = [
+                Math.round((camPos[0] + dir[0] * dist) * 100) / 100,
+                Math.round((camPos[1] + dir[1] * dist) * 100) / 100,
+                Math.round((camPos[2] + dir[2] * dist) * 100) / 100,
+            ];
+            console.log(`%cSensor position: [${pos}]`, "color: #4ade80; font-size: 14px; font-weight: bold");
+            console.log("Copy into sensors array →", JSON.stringify(pos));
+            return; // don't start orbiting
+        }
+
         startX = e.clientX;
         startY = e.clientY;
         down = e.ctrlKey || e.metaKey ? 2 : 1;
@@ -1350,6 +1597,8 @@ async function main() {
 
         const viewProj = multiply4(projectionMatrix, actualViewMatrix);
         worker.postMessage({ view: viewProj });
+
+        updateSensorPositions(actualViewMatrix, projectionMatrix);
 
         const currentFps = 1000 / (now - lastFrame) || 0;
         avgFps = avgFps * 0.9 + currentFps * 0.1;
